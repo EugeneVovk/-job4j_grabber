@@ -73,12 +73,10 @@ import static org.quartz.TriggerBuilder.newTrigger;
  * 6. Закрыть коннект нужно в блоке try-with-resources.
  */
 public class AlertRabbit {
-    private static Connection connection;
 
     public static void main(String[] args) {
-        try {
-            connect();
-            /*List<Long> store = new ArrayList<>();*/
+        Properties properties = readFile();
+        try (Connection connection = connect(properties)) {
             Scheduler scheduler = StdSchedulerFactory.getDefaultScheduler();
             scheduler.start();
             JobDataMap data = new JobDataMap();
@@ -88,7 +86,7 @@ public class AlertRabbit {
                     .build();
             SimpleScheduleBuilder times = simpleSchedule()
                     .withIntervalInSeconds(
-                            Integer.parseInt(readFile().getProperty("rabbit.interval")))
+                            Integer.parseInt(properties.getProperty("rabbit.interval")))
                     .repeatForever();
             Trigger trigger = newTrigger()
                     .startNow()
@@ -97,11 +95,8 @@ public class AlertRabbit {
             scheduler.scheduleJob(job, trigger);
             Thread.sleep(10000);
             scheduler.shutdown();
-            /*System.out.println(store);*/
         } catch (SchedulerException | InterruptedException | ClassNotFoundException | SQLException e) {
             e.printStackTrace();
-        } finally {
-            disconnect();
         }
     }
 
@@ -114,9 +109,8 @@ public class AlertRabbit {
         @Override
         public void execute(JobExecutionContext context) throws JobExecutionException {
             System.out.println("Rabbit runs here ...");
-           /* List<Long> store = (List<Long>) context.getJobDetail().getJobDataMap().get("store");
-            store.add(System.currentTimeMillis()); */
-            connection = (Connection) context.getJobDetail().getJobDataMap().get("store");
+            Connection connection =
+                    (Connection) context.getJobDetail().getJobDataMap().get("store");
             try (PreparedStatement ps = connection.prepareStatement(
                     "insert into rabbit(created_date) values(?);")) {
                 ps.setTimestamp(1, new Timestamp(System.currentTimeMillis()));
@@ -139,22 +133,12 @@ public class AlertRabbit {
         return properties;
     }
 
-    public static void connect() throws SQLException, ClassNotFoundException {
-        Class.forName(readFile().getProperty("driver"));
-        connection = DriverManager.getConnection(
-                readFile().getProperty("url"),
-                readFile().getProperty("username"),
-                readFile().getProperty("password")
+    public static Connection connect(Properties properties) throws SQLException, ClassNotFoundException {
+        Class.forName(properties.getProperty("driver"));
+        return DriverManager.getConnection(
+                properties.getProperty("url"),
+                properties.getProperty("username"),
+                properties.getProperty("password")
         );
-    }
-
-    public static void disconnect() {
-        if (connection != null) {
-            try {
-                connection.close();
-            } catch (SQLException e) {
-                e.printStackTrace();
-            }
-        }
     }
 }
